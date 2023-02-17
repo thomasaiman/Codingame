@@ -133,6 +133,8 @@ while True:
 
             # In the first league: MOVE <x> <y> | WAIT; In later leagues: | SPELL <spellParams>;
 
+        if t1.base_distance < 1000:
+            heroes[0].set_command(f"SPELL WIND {MAP_MID.x} {MAP_MID.y}")
 
     for h in heroes:
         h.execute()
