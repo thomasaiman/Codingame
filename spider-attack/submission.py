@@ -7,22 +7,20 @@ import itertools
 
 def debug(s: str):
     print(s, file=sys.stderr, flush=True)
-# Auto-generated code below aims at helping you parse
-# the standard input according to the problem statement.
 
-# base_x: The corner of the map representing your base
-BASE_X, BASE_Y = [int(i) for i in input().split()]
-HEROES_PER_PLAYER = int(input())  # Always 3
 
 class Point:
     __slots__ = ('x', 'y')
 
     def __init__(self, x: Numeric , y: Numeric):
-        self.x, self.y = x, y
+        self.x, self.y = int(x), int(y)
 
     def dist(self, other: 'Point'):
         return math.sqrt((self.x - other.x)**2 + (self.y - other.y)**2)
 
+    def midpoint(self, other: 'Point'):
+        x, y = (self.x + other.x)/2, (self.y + other.y)/2
+        return Point(x, y)
 
 class EntityType(Enum):
     MONSTER = 0
@@ -65,6 +63,44 @@ class Entity:
         print(self.command)
 
 
+# Auto-generated code below aims at helping you parse
+# the standard input according to the problem statement.
+
+# base_x: The corner of the map representing your base
+BASE_X, BASE_Y = [int(i) for i in input().split()]
+HEROES_PER_PLAYER = int(input())  # Always 3
+
+BASE_VISION, HERO_VISION = 6000, 2200
+BASE = Point(BASE_X, BASE_Y)
+MAP_X, MAP_Y = 17630, 9000
+MAP_MID = Point(MAP_X/2, MAP_Y/2)
+
+# HERO1_HOME = BASE.midpoint(MAP_MID)
+MIRROR = 1 if BASE_X == 0 else -1
+BASE_VISION *= MIRROR
+
+
+HERO1_HOME = Point(
+    x = BASE.x + BASE_VISION*math.cos(math.pi/4),
+    y = BASE.y + BASE_VISION*math.sin(math.pi/4)
+)
+
+HERO2_HOME = Point(
+    x = BASE.x + BASE_VISION*math.cos(math.pi/8),
+    y = BASE.y + BASE_VISION*math.sin(math.pi/8)
+)
+
+HERO3_HOME = Point(
+    x = BASE.x + BASE_VISION*math.cos(math.pi*3/8),
+    y = BASE.y + BASE_VISION*math.sin(math.pi*3/8)
+)
+
+BASE_VISION *= MIRROR
+
+HERO_HOMES = [HERO1_HOME, HERO2_HOME, HERO3_HOME]
+
+
+
 # game loop
 while True:
     for i in range(2):
@@ -80,26 +116,23 @@ while True:
 
     [e.calc_distance() for e in threats]
     [e.calc_distance() for e in heroes]
-    threats.sort(key= lambda e: e.base_distance, reverse=True)
+    threats.sort(key= lambda e: e.base_distance)
     heroes.sort(key= lambda e: e.base_distance)
 
     debug(threats)
     debug(heroes)
-    for h in heroes:
-        h.set_command("WAIT")
-
     for i in range(HEROES_PER_PLAYER):
+        heroes[i].set_command(f"MOVE {HERO_HOMES[i].x} {HERO_HOMES[i].y}")
 
-        # Write an action using print
-        # To debug: print("Debug messages...", file=sys.stderr, flush=True)
-
-        # In the first league: MOVE <x> <y> | WAIT; In later leagues: | SPELL <spellParams>;
-
-        if threats:
-            t1: Entity = threats.pop()
+    if threats:
+        t1: Entity = threats[0]
+        for i in range(HEROES_PER_PLAYER):
             heroes[i].set_command(f"MOVE {t1.x} {t1.y}")
-        else:
-            heroes[i].set_command(heroes[0].command)
+            # Write an action using print
+            # To debug: print("Debug messages...", file=sys.stderr, flush=True)
+
+            # In the first league: MOVE <x> <y> | WAIT; In later leagues: | SPELL <spellParams>;
+
 
     for h in heroes:
         h.execute()
