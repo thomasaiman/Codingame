@@ -1,7 +1,7 @@
 from re import S
 import sys
 import math
-from typing import List
+from typing import List, SupportsFloat as Numeric
 from enum import Enum
 import itertools
 
@@ -13,6 +13,16 @@ def debug(s: str):
 # base_x: The corner of the map representing your base
 BASE_X, BASE_Y = [int(i) for i in input().split()]
 HEROES_PER_PLAYER = int(input())  # Always 3
+
+class Point:
+    __slots__ = ('x', 'y')
+
+    def __init__(self, x: Numeric , y: Numeric):
+        self.x, self.y = x, y
+
+    def dist(self, other: 'Point'):
+        return math.sqrt((self.x - other.x)**2 + (self.y - other.y)**2)
+
 
 class EntityType(Enum):
     MONSTER = 0
