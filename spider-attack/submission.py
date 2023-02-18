@@ -2,7 +2,6 @@ import sys
 import math
 from typing import List, Union
 from enum import Enum
-# import itertools
 from collections import namedtuple
 
 Numeric = Union[int, float]
@@ -15,7 +14,10 @@ class Point:
     __slots__ = ('x', 'y')
 
     def __init__(self, x: Numeric , y: Numeric):
-        self.x, self.y = int(x), int(y)
+        self.x, self.y = x, y
+
+    def __str__(self):
+        return f"Point({self.x} {self.y})"
 
     def dist(self, other: 'Point'):
         return math.sqrt((self.x - other.x)**2 + (self.y - other.y)**2)
@@ -35,7 +37,7 @@ class Vector:
     __slots__ = ('x', 'y')
 
     def __init__(self, x: Numeric , y: Numeric):
-        self.x, self.y = int(x), int(y)
+        self.x, self.y = x, y
 
     def add(self, v: 'Vector') -> 'Vector':
         return Vector(self.x + v.x, self.y + v.y)
@@ -46,6 +48,12 @@ class Vector:
     def norm(self):
         return math.sqrt(self.x**2 + self.y**2)
     
+    def normalize(self):
+        n: float = self.norm()
+        return Vector(self.x/n, self.y/n)
+
+    def __str__(self):
+        return f"Vector({self.x} {self.y})"
 
 class EntityType(Enum):
     MONSTER = 0
@@ -122,8 +130,8 @@ class Hero(Entity):
         super().__init__(*args, **kwargs)
         self.target = None
         
-    def set_command(self, s: str):
-        self.command = s
+    def set_command(self, c: 'CommandType', point: Point, msg: str = ''):
+        self.command = f'{c.value} {int(point.x)} {int(point.y)} {msg}'
 
     def execute(self):
         print(self.command)
@@ -131,19 +139,42 @@ class Hero(Entity):
     def set_target(self, e: Entity):
         self.target = e
     
+    def defensive_wind(self, t: Entity):
+        v: Vector = BASE.vector_to(t.loc)
+        self.set_command(CommandType.WIND, self.loc.add_vector(v))
+
+    def attack_monster(self, t: Entity):
+        v: Vector = t.loc.vector_to(self.loc)
+        if v.norm() > MELEE_RANGE+HERO_SPEED:
+            p:Point = t.loc.add_vector(t.vel)
+        else:
+            centroid: Point = HERO1_HOME
+            #find successful attack spot closest to centroid
+            v2: Vector = v.normalize().scale(MELEE_RANGE*0.99)
+            debug(f"{self.id} atk {t.id} v2 = {v2} {v2.norm()}")
+            p:Point = t.loc.add_vector(v2)
+
+        self.set_command(CommandType.MOVE, p)
+
+
+
     def defend(self):
         if self.target == None:
             return
-
         t = self.target
-        if t.dist(BASE) < 2000 and self.loc.dist(t.loc) < 1280:
-            self.set_command(f"SPELL WIND {MAP_MID.x} {MAP_MID.y}")
+        if t.dist(BASE) < 2000 and self.loc.dist(t.loc) < WIND_RANGE:
+            self.defensive_wind(t)
         else:
-            self.set_command(f"MOVE {t.loc.x} {t.loc.y}")
+            self.attack_monster(t)
 
 class OppHero(Hero):
     pass
 
+class CommandType(Enum):
+    MOVE = "MOVE"
+    WIND = "SPELL WIND"
+    SHIELD = "SPELL SHIELD"
+    CONTROL = "SPELL CONTROL"
 
 
 # Auto-generated code below aims at helping you parse
@@ -208,7 +239,7 @@ while True:
     threats = threats[:3]
 
     for i in range(HEROES_PER_PLAYER):
-        heroes[i].set_command(f"MOVE {HERO_HOMES[i].x} {HERO_HOMES[i].y}")
+        heroes[i].set_command(CommandType.MOVE, HERO_HOMES[i])
 
 
     free_heroes: List[Hero] = [h for h in heroes]
