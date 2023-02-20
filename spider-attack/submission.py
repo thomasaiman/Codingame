@@ -32,6 +32,12 @@ class Point:
     def add_vector(self, v: 'Vector') -> 'Point':
         return Point(self.x + v.x, self.y + v.y)
 
+    @staticmethod
+    def centroid(points: List['Point']):
+        return Point(
+            x=sum(p.x for p in points)/len(points),
+            y=sum(p.y for p in points)/len(points)
+        )
 
 class Vector:
     __slots__ = ('x', 'y')
@@ -117,18 +123,24 @@ class Entity(EntityBase):
     # threat_for: Given this monster's trajectory, is it a threat to 1=your base, 2=your opponent's base, 0=neither
     def __init__(self, *args, **kwargs):
         super().__init__()
-    
+        
     def dist(self, other: Point):
         return self.loc.dist(other)
     
 class Monster(Entity):
-    pass
-    
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+        self.atk_neighbors = []
+        self.wind_neighbors = []
+        
+    def find_atk_neighbors(self, monsters: List['Monster']):
+        pass
 
 class Hero(Entity):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.target = None
+        self.opp_neighbors = []
 
     def _wind(self, point:Point):
         self.command = f"{CommandType.WIND.value} {int(point.x)} {int(point.y)}"
@@ -152,6 +164,10 @@ class Hero(Entity):
         v: Vector = BASE.vector_to(t.loc)
         self._wind(self.loc.add_vector(v))
 
+    def offensive_wind(self, t: Entity):
+        v: Vector = t.loc.vector_to(OPP_BASE)
+        self._wind(self.loc.add_vector(v))
+
     def attack_monster(self, t: Entity):
         v: Vector = t.loc.vector_to(self.loc)
         if v.norm() < MELEE_RANGE and MANA_ME > 50 and self.shield_life==0:
@@ -160,9 +176,10 @@ class Hero(Entity):
         elif v.norm() > MELEE_RANGE+HERO_SPEED:
             p:Point = t.loc.add_vector(t.vel)
         else:
-            centroid: Point = HERO1_HOME
+            centroid: Point = CENTROID
             #find successful attack spot closest to centroid
-            v2: Vector = v.normalize().scale(MELEE_RANGE*0.99)
+            v2: Vector = t.loc.vector_to(centroid)
+            v2: Vector = v2.normalize().scale(MELEE_RANGE*0.99)
             debug(f"{self.id} atk {t.id} v2 = {v2} {v2.norm()}")
             p:Point = t.loc.add_vector(v2)
 
@@ -171,19 +188,41 @@ class Hero(Entity):
 
 
     def defend(self):
-        if self.target == None:
-            if self.shield_life>0:
+        if self.shield_life==0 and MANA_ME > 40 and self.opp_neighbors:
+            self._shield(self.id)
+            return
+
+        if self.shield_life>0 and MANA_ME > 40 and self.opp_neighbors:
+            if self.opp_neighbors[0].shield_life == 0:
+                t = self.opp_neighbors[0]
+                v: Vector = t.loc.vector_to(JAIL)
+                self._control(t.id, t.loc.add_vector(v))
                 return
-            elif self.shield_life==0 and MANA_ME>50:
-                self._shield(self.id)
-                return 
-        else:
-            t: Entity = self.target
-            if t.dist(BASE) < 2000 and self.loc.dist(t.loc) < WIND_RANGE:
+
+        if self.target == None:
+            return
+        
+        t: Entity = self.target
+        
+        if t.etype == EntityType.MONSTER:
+            if t.dist(BASE) < (MONSTER_VISION-WIND_MOVE) and self.loc.dist(t.loc) < WIND_RANGE and t.shield_life==0 and MANA_ME>10:
                 self.defensive_wind(t)
+            elif MANA_ME > 100 and self.loc.dist(t.loc) < WIND_RANGE and t.shield_life==0:
+                self.offensive_wind(t)
             else:
                 self.attack_monster(t)
+        else:
+            if MANA_ME > 50 and self.loc.dist(t.loc) < WIND_RANGE and t.shield_life==0:
+                self.defensive_wind(t)
+                # v: Vector = BASE.vector_to(t.loc)
+                # self._control(t.id, t.loc.add_vector(v))
 
+
+class AtkHero(Hero):
+    pass
+
+class DefHero(Hero):
+    pass
 class OppHero(Hero):
     pass
 
@@ -206,10 +245,15 @@ WIND_RANGE, SHIELD_RANGE, CONTROL_RANGE = 1280, 2200, 2200
 WIND_MOVE = 2200
 HERO_SPEED, MELEE_RANGE = 800, 800
 MONSTER_SPEED = 400
+ATTACK_DAMAGE = 2
 
 BASE = Point(BASE_X, BASE_Y)
 MAP_X, MAP_Y = 17630, 9000
 MAP_MID = Point(MAP_X/2, MAP_Y/2)
+if BASE_X == 0:
+    OPP_BASE = Point(MAP_X, MAP_Y)
+else:
+    OPP_BASE = Point(0, 0)
 
 # HERO1_HOME = BASE.midpoint(MAP_MID)
 MIRROR = 1 if BASE_X == 0 else -1
@@ -217,12 +261,13 @@ MIRROR = 1 if BASE_X == 0 else -1
 _v1 = Vector(math.cos(math.pi/4), math.sin(math.pi/4))
 _v2 = Vector(math.cos(math.pi/8), math.sin(math.pi/8))
 _v3 = Vector(math.cos(math.pi*3/8), math.sin(math.pi*3/8))
+_v4 = Vector(BASE_VISION, MAP_Y)
 _scale = (BASE_VISION + HERO_VISION/2) * MIRROR
 
-HERO1_HOME = BASE.add_vector(_v1.scale(_scale))
-HERO2_HOME = BASE.add_vector(_v2.scale(_scale))
-HERO3_HOME = BASE.add_vector(_v3.scale(_scale))
-
+HERO1_HOME = BASE.add_vector(_v1.scale(_scale*0.75))
+HERO2_HOME = BASE.add_vector(_v1.scale(_scale*1))
+HERO3_HOME = OPP_BASE.add_vector(_v1.scale(_scale*-1))
+JAIL = BASE.add_vector(_v4)
 
 HERO_HOMES = [HERO1_HOME, HERO2_HOME, HERO3_HOME]
 
@@ -236,15 +281,39 @@ while True:
     entity_count = int(input())  # Amount of heros and monsters you can see
     entities: List[Entity] = [entityFactory(input()) for _ in range(entity_count)]
     heroes: List[Hero] = [Hero(*e) for e in entities if e.etype == EntityType.MY_HERO]
-    enemies: List[OppHero] = [OppHero(*e) for e in entities if e.etype == EntityType.OPP_HERO]
+    atk_heroes : List[AtkHero] = [AtkHero(*heroes[0])]
+    def_heroes : List[DefHero] = [DefHero(*heroes[1:])]
+
+    opps: List[OppHero] = [OppHero(*e) for e in entities if e.etype == EntityType.OPP_HERO]
     monsters: List[Monster] = [Monster(*e) for e in entities if e.etype == EntityType.MONSTER]
-    threats = monsters
+    threats = monsters + opps
+
+    for h in def_heroes:
+        for o in opps:
+            if h.dist(o.loc) < CONTROL_RANGE:
+                h.opp_neighbors.append(o)
+
+    # def attackers_needed(m:Monster):
+    #     time: float = m.dist(BASE)/MONSTER_SPEED
+    #     n_attacks: float = m.health / ATTACK_DAMAGE
+    #     return math.ceil(n_attacks/time) + (1 if m.dist(BASE) < 2000 else 0)
+
+    # for m in monsters:
+    #     for i in range (attackers_needed(m)):
+    #         threats.append(m)
+
+    close_monsters = [m for m in monsters if m.dist(BASE)<MONSTER_VISION]
+    if len(close_monsters) > 1:
+        CENTROID = Point.centroid([m.loc for m in close_monsters])
+    else:
+        CENTROID = HERO1_HOME
 
     # threats: List[Entity] = [e for e in monsters if e.threat_for == ThreatFor.MY_BASE]
 
     def tsort(e: Entity):
         # prioritize incoming threats, otherwise closest monster
-        return (not (e.threat_for==ThreatFor.MY_BASE), e.dist(BASE))
+        # return (not (e.threat_for==ThreatFor.MY_BASE), e.dist(BASE))
+        return (not (e.etype==EntityType.OPP_HERO),e.dist(BASE))
 
     threats.sort(key= lambda e: tsort(e))
     threats = threats[:3]
