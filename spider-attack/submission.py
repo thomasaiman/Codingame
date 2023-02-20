@@ -53,7 +53,7 @@ class Vector:
 
     def norm(self):
         return math.sqrt(self.x**2 + self.y**2)
-    
+
     def normalize(self):
         n: float = self.norm()
         return Vector(self.x/n, self.y/n)
@@ -88,7 +88,7 @@ EntityBase = namedtuple('Entity', (
 )
 
 def entityFactory(s: str) -> 'Entity':
-    (       
+    (
         id,
         etype,
         x,
@@ -109,7 +109,7 @@ def entityFactory(s: str) -> 'Entity':
     threat_for = ThreatFor(threat_for)
 
     return Entity(id, etype, loc, shield_life, is_controlled, health, vel, near_base, threat_for)
- 
+
 
 class Entity(EntityBase):
     # _id: Unique identifier
@@ -123,28 +123,35 @@ class Entity(EntityBase):
     # threat_for: Given this monster's trajectory, is it a threat to 1=your base, 2=your opponent's base, 0=neither
     def __init__(self, *args, **kwargs):
         super().__init__()
-        
+
     def dist(self, other: Point):
         return self.loc.dist(other)
-    
+
 class Monster(Entity):
     def __init__(self, *args, **kwargs):
         super().__init__()
         self.atk_neighbors = []
         self.wind_neighbors = []
-        
+
     def find_atk_neighbors(self, monsters: List['Monster']):
         pass
+
+    def attackers_needed(self):
+        time: float = self.dist(BASE)/MONSTER_SPEED
+        n_attacks: float = self.health / ATTACK_DAMAGE
+        return math.ceil(n_attacks/time)
+
 
 class Hero(Entity):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.target = None
+        self.home = HERO1_HOME
         self.opp_neighbors = []
 
     def _wind(self, point:Point):
         self.command = f"{CommandType.WIND.value} {int(point.x)} {int(point.y)}"
-    
+
     def _move(self, point:Point):
         self.command = f"{CommandType.MOVE.value} {int(point.x)} {int(point.y)}"
 
@@ -155,11 +162,12 @@ class Hero(Entity):
         self.command = f"{CommandType.CONTROL.value} {id} {int(point.x)} {int(point.y)}"
 
     def execute(self):
+        self.defend()
         print(self.command)
 
     def set_target(self, e: Entity):
         self.target = e
-    
+
     def defensive_wind(self, t: Entity):
         v: Vector = BASE.vector_to(t.loc)
         self._wind(self.loc.add_vector(v))
@@ -176,7 +184,7 @@ class Hero(Entity):
         elif v.norm() > MELEE_RANGE+HERO_SPEED:
             p:Point = t.loc.add_vector(t.vel)
         else:
-            centroid: Point = CENTROID
+            centroid: Point = self.home
             #find successful attack spot closest to centroid
             v2: Vector = t.loc.vector_to(centroid)
             v2: Vector = v2.normalize().scale(MELEE_RANGE*0.99)
@@ -188,6 +196,7 @@ class Hero(Entity):
 
 
     def defend(self):
+        self.opp_neighbors = [o for o in opps if o.dist(self.loc)<CONTROL_RANGE]
         if self.shield_life==0 and MANA_ME > 40 and self.opp_neighbors:
             self._shield(self.id)
             return
@@ -196,14 +205,20 @@ class Hero(Entity):
             if self.opp_neighbors[0].shield_life == 0:
                 t = self.opp_neighbors[0]
                 v: Vector = t.loc.vector_to(JAIL)
-                self._control(t.id, t.loc.add_vector(v))
+                self.defensive_wind(t)
                 return
 
-        if self.target == None:
+
+        if not monsters:
+            self._move(self.home)
             return
-        
-        t: Entity = self.target
-        
+
+        monsters.sort(key=lambda m:m.dist(BASE))
+        t: Entity = monsters[0]
+        if t.dist(self.home) > 3000:
+            self._move(self.home)
+            return
+
         if t.etype == EntityType.MONSTER:
             if t.dist(BASE) < (MONSTER_VISION-WIND_MOVE) and self.loc.dist(t.loc) < WIND_RANGE and t.shield_life==0 and MANA_ME>10:
                 self.defensive_wind(t)
@@ -219,10 +234,65 @@ class Hero(Entity):
 
 
 class AtkHero(Hero):
-    pass
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.home = HERO3_HOME
+        self.atk_mode: bool = False
+
+    def execute(self):
+        if MANA_ME > 200:
+            self.atk_mode = True
+        elif MANA_ME < 50:
+            self.atk_mode = False
+
+        if self.atk_mode == True:
+            self.attack()
+        else:
+            self.gather()
+
+        print(self.command)
+
+
+    def attack(self):
+        if self.loc.dist(self.home) > 500:
+            self._move(self.home)
+        for m in monsters:
+            if m.shield_life>0:
+                continue
+            if m.threat_for == ThreatFor.OPP_BASE:
+                if m.dist(OPP_BASE) < 12*MONSTER_SPEED+300:
+                    if self.dist(m.loc) < SHIELD_RANGE:
+                        self._shield(m.id)
+                        return
+            elif m.dist(OPP_BASE) < MONSTER_VISION+WIND_RANGE:
+                if m.dist(self) < WIND_RANGE:
+                    self.offensive_wind(m)
+                    return
+        else:
+            for o in opps:
+                if o.shield_life==0 and self.dist(o)<CONTROL_RANGE:
+                    self._control(o.id, BASE)
+                    return
+
+
+    def gather(self):
+        if monsters:
+            target: Monster = min(monsters, key=lambda m: m.loc.dist(HERO3_HOME))
+            self.attack_monster(target)
+            return
+        self._move(self.home)
+
+
+class MidHero(Hero):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.home = HERO2_HOME
 
 class DefHero(Hero):
-    pass
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.home = HERO1_HOME
+
 class OppHero(Hero):
     pass
 
@@ -262,12 +332,13 @@ _v1 = Vector(math.cos(math.pi/4), math.sin(math.pi/4))
 _v2 = Vector(math.cos(math.pi/8), math.sin(math.pi/8))
 _v3 = Vector(math.cos(math.pi*3/8), math.sin(math.pi*3/8))
 _v4 = Vector(BASE_VISION, MAP_Y)
-_scale = (BASE_VISION + HERO_VISION/2) * MIRROR
+_scale = (BASE_VISION) * MIRROR
 
 HERO1_HOME = BASE.add_vector(_v1.scale(_scale*0.75))
-HERO2_HOME = BASE.add_vector(_v1.scale(_scale*1))
-HERO3_HOME = OPP_BASE.add_vector(_v1.scale(_scale*-1))
+HERO2_HOME = BASE.add_vector(_v2.scale(_scale*1.5))
+HERO3_HOME = OPP_BASE.add_vector(_v1.scale(_scale*-1.5))
 JAIL = BASE.add_vector(_v4)
+
 
 HERO_HOMES = [HERO1_HOME, HERO2_HOME, HERO3_HOME]
 
@@ -277,59 +348,18 @@ HERO_HOMES = [HERO1_HOME, HERO2_HOME, HERO3_HOME]
 while True:
     HEALTH_ME, MANA_ME = [int(j) for j in input().split()]
     HEALTH_OPP, MANA_OPP = [int(j) for j in input().split()]
-    
+
     entity_count = int(input())  # Amount of heros and monsters you can see
     entities: List[Entity] = [entityFactory(input()) for _ in range(entity_count)]
     heroes: List[Hero] = [Hero(*e) for e in entities if e.etype == EntityType.MY_HERO]
-    atk_heroes : List[AtkHero] = [AtkHero(*heroes[0])]
-    def_heroes : List[DefHero] = [DefHero(*heroes[1:])]
 
     opps: List[OppHero] = [OppHero(*e) for e in entities if e.etype == EntityType.OPP_HERO]
     monsters: List[Monster] = [Monster(*e) for e in entities if e.etype == EntityType.MONSTER]
-    threats = monsters + opps
 
-    for h in def_heroes:
-        for o in opps:
-            if h.dist(o.loc) < CONTROL_RANGE:
-                h.opp_neighbors.append(o)
+    heroes.sort(key=lambda e:e.dist(BASE))
+    h1, h2, h3 = DefHero(*heroes[0]), MidHero(*heroes[1]), AtkHero(*heroes[2])
+    heroes = [h1,h2,h3]
 
-    # def attackers_needed(m:Monster):
-    #     time: float = m.dist(BASE)/MONSTER_SPEED
-    #     n_attacks: float = m.health / ATTACK_DAMAGE
-    #     return math.ceil(n_attacks/time) + (1 if m.dist(BASE) < 2000 else 0)
-
-    # for m in monsters:
-    #     for i in range (attackers_needed(m)):
-    #         threats.append(m)
-
-    close_monsters = [m for m in monsters if m.dist(BASE)<MONSTER_VISION]
-    if len(close_monsters) > 1:
-        CENTROID = Point.centroid([m.loc for m in close_monsters])
-    else:
-        CENTROID = HERO1_HOME
-
-    # threats: List[Entity] = [e for e in monsters if e.threat_for == ThreatFor.MY_BASE]
-
-    def tsort(e: Entity):
-        # prioritize incoming threats, otherwise closest monster
-        # return (not (e.threat_for==ThreatFor.MY_BASE), e.dist(BASE))
-        return (not (e.etype==EntityType.OPP_HERO),e.dist(BASE))
-
-    threats.sort(key= lambda e: tsort(e))
-    threats = threats[:3]
-
-    for i in range(HEROES_PER_PLAYER):
-        heroes[i]._move(HERO_HOMES[i])
-
-
-    free_heroes: List[Hero] = [h for h in heroes]
-    for t in threats:
-        free_heroes.sort(key= lambda e: e.loc.dist(t.loc), reverse=True)
-        h: Hero = free_heroes.pop()
-        h.set_target(t)
-
-    
     heroes.sort(key=lambda e:e.id)
     for h in heroes:
-        h.defend()
         h.execute()
