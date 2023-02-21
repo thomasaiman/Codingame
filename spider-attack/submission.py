@@ -132,16 +132,17 @@ class EntityTracker:
                 self.opps[e.id] = e
             else:
                 raise ValueError()
-            
+        
+        debug(str(list(self.monsters.keys())))
         return
 
     def prune_monsters(self):
-        off_maps: List[int] = []
+        to_remove: List[int] = []
         for id, m in self.monsters.items():
-            if not ((0 < m.loc.x < MAP_X) and (0 < m.loc.y < MAP_Y)):
-                off_maps.append(id)
+            if (not m.on_map()) or (m.expect_seen()):
+                to_remove.append(id)
         
-        [self.monsters.pop(id) for id in off_maps]
+        [self.monsters.pop(id) for id in to_remove]
 
 class Entity:
     # _id: Unique identifier
@@ -193,6 +194,18 @@ class Monster(Entity):
     def advance(self):
         self.loc = self.loc.add_vector(self.vel)
         self.shield_life = max(self.shield_life-1, 0)
+
+    def on_map(self) -> bool:
+        return ((0 < self.loc.x < MAP_X) and (0 < self.loc.y < MAP_Y))
+
+    def expect_seen(self) -> bool:
+        if self.loc.dist(BASE) < BASE_VISION:
+            return True
+        for h in ENTITIES.heroes.values():
+            if self.loc.dist(h.loc) < HERO_VISION:
+                return True
+        else:
+            return False
 
 class Hero(Entity):
     def __init__(self, *args, **kwargs):
@@ -427,7 +440,7 @@ while True:
     HEALTH_ME, MANA_ME = [int(j) for j in input().split()]
     HEALTH_OPP, MANA_OPP = [int(j) for j in input().split()]
 
-    if MANA_ME > 200:
+    if MANA_ME > 80:
         ATK_MODE = True
     elif MANA_ME < 50:
         ATK_MODE = False
