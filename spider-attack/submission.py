@@ -1,6 +1,6 @@
 import sys
 import math
-from typing import List, Union
+from typing import List, Union, Dict
 from enum import Enum
 from collections import namedtuple
 
@@ -79,7 +79,7 @@ EntityBase = namedtuple('Entity', (
     'etype',
     'loc',
     'shield_life',
-    'is_contolled',
+    'is_controlled',
     'health',
     'vel',
     'near_base',
@@ -87,7 +87,7 @@ EntityBase = namedtuple('Entity', (
     )
 )
 
-def entityFactory(s: str) -> 'Entity':
+def entityBaseFactory(s: str) -> EntityBase:
     (
         id,
         etype,
@@ -108,10 +108,42 @@ def entityFactory(s: str) -> 'Entity':
     near_base = bool(near_base)
     threat_for = ThreatFor(threat_for)
 
-    return Entity(id, etype, loc, shield_life, is_controlled, health, vel, near_base, threat_for)
+    return EntityBase(id, etype, loc, shield_life, is_controlled, health, vel, near_base, threat_for)
 
+class EntityTracker:
+    def __init__(self):
+        self.heroes: Dict[int, Hero ] = {}
+        self.opps: Dict[int, OppHero] = {}
+        self.monsters: Dict[int, Monster] = {}
 
-class Entity(EntityBase):
+    def update(self, n: int):
+        [m.advance() for m in self.monsters.values()]
+        self.prune_monsters()
+        updates: List[EntityBase] = [entityBaseFactory(input()) for _ in range(n)]
+        for eb in updates:
+            if eb.etype == EntityType.MONSTER:
+                e: Entity = Monster(eb)
+                self.monsters[e.id] = e
+            elif eb.etype == EntityType.MY_HERO:
+                e: Entity = Hero(eb)
+                self.heroes[e.id] = e
+            elif eb.etype == EntityType.OPP_HERO:
+                e: Entity = OppHero(eb)
+                self.opps[e.id] = e
+            else:
+                raise ValueError()
+            
+        return
+
+    def prune_monsters(self):
+        off_maps: List[int] = []
+        for id, m in self.monsters.items():
+            if not ((0 < m.loc.x < MAP_X) and (0 < m.loc.y < MAP_Y)):
+                off_maps.append(id)
+        
+        [self.monsters.pop(id) for id in off_maps]
+
+class Entity:
     # _id: Unique identifier
     # _type: 0=monster, 1=your hero, 2=opponent hero
     # x: Position of this entity
@@ -121,15 +153,32 @@ class Entity(EntityBase):
     # vx: Trajectory of this monster
     # near_base: 0=monster with no target yet, 1=monster targeting a base
     # threat_for: Given this monster's trajectory, is it a threat to 1=your base, 2=your opponent's base, 0=neither
-    def __init__(self, *args, **kwargs):
-        super().__init__()
+    def __init__(self, eb: EntityBase):
+        self.id = eb.id
+        self.etype = eb.etype
+        self.loc = eb.loc
+        self.shield_life = eb.shield_life
+        self.is_controlled = eb.is_controlled
+        self.health = eb.health
+        self.vel = eb.vel
+        self.near_base = eb.near_base
+        self.threat_for = eb.threat_for
 
-    def dist(self, other: Point):
-        return self.loc.dist(other)
+    def advance(self):
+        raise NotImplementedError()
+
+    def dist(self, other: Union[Point,'Entity']):
+        if type(other) is Entity:
+            p: Point = other.loc
+        elif type(other) is Point:
+            p: Point = other
+        else:
+            raise ValueError()
+        return self.loc.dist(p)
 
 class Monster(Entity):
     def __init__(self, *args, **kwargs):
-        super().__init__()
+        super().__init__(*args, **kwargs)
         self.atk_neighbors = []
         self.wind_neighbors = []
 
@@ -141,13 +190,15 @@ class Monster(Entity):
         n_attacks: float = self.health / ATTACK_DAMAGE
         return math.ceil(n_attacks/time)
 
+    def advance(self):
+        self.loc = self.loc.add_vector(self.vel)
+        self.shield_life = max(self.shield_life-1, 0)
 
 class Hero(Entity):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.target = None
         self.home = HERO1_HOME
-        self.opp_neighbors = []
 
     def _wind(self, point:Point):
         self.command = f"{CommandType.WIND.value} {int(point.x)} {int(point.y)}"
@@ -162,8 +213,7 @@ class Hero(Entity):
         self.command = f"{CommandType.CONTROL.value} {id} {int(point.x)} {int(point.y)}"
 
     def execute(self):
-        self.defend()
-        print(self.command)
+        raise NotImplementedError()
 
     def set_target(self, e: Entity):
         self.target = e
@@ -178,10 +228,7 @@ class Hero(Entity):
 
     def attack_monster(self, t: Entity):
         v: Vector = t.loc.vector_to(self.loc)
-        if v.norm() < MELEE_RANGE and MANA_ME > 50 and self.shield_life==0:
-            self._shield(self.id)
-            return
-        elif v.norm() > MELEE_RANGE+HERO_SPEED:
+        if v.norm() > MELEE_RANGE+HERO_SPEED:
             p:Point = t.loc.add_vector(t.vel)
         else:
             centroid: Point = self.home
@@ -193,58 +240,19 @@ class Hero(Entity):
 
         self._move(p)
 
-
-
-    def defend(self):
-        self.opp_neighbors = [o for o in opps if o.dist(self.loc)<CONTROL_RANGE]
-        if self.shield_life==0 and MANA_ME > 40 and self.opp_neighbors:
-            self._shield(self.id)
-            return
-
-        if self.shield_life>0 and MANA_ME > 40 and self.opp_neighbors:
-            if self.opp_neighbors[0].shield_life == 0:
-                t = self.opp_neighbors[0]
-                v: Vector = t.loc.vector_to(JAIL)
-                self.defensive_wind(t)
-                return
-
-
-        if not monsters:
-            self._move(self.home)
-            return
-
-        monsters.sort(key=lambda m:m.dist(BASE))
-        t: Entity = monsters[0]
-        if t.dist(self.home) > 3000:
-            self._move(self.home)
-            return
-
-        if t.etype == EntityType.MONSTER:
-            if t.dist(BASE) < (MONSTER_VISION-WIND_MOVE) and self.loc.dist(t.loc) < WIND_RANGE and t.shield_life==0 and MANA_ME>10:
-                self.defensive_wind(t)
-            elif MANA_ME > 100 and self.loc.dist(t.loc) < WIND_RANGE and t.shield_life==0:
-                self.offensive_wind(t)
-            else:
-                self.attack_monster(t)
-        else:
-            if MANA_ME > 50 and self.loc.dist(t.loc) < WIND_RANGE and t.shield_life==0:
-                self.defensive_wind(t)
-                # v: Vector = BASE.vector_to(t.loc)
-                # self._control(t.id, t.loc.add_vector(v))
+    def opp_neighbors(self) -> List['OppHero']:
+        return [o for o in opps if o.dist(self.loc)<CONTROL_RANGE]
 
 
 class AtkHero(Hero):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.home = HERO3_HOME
-        self.atk_mode: bool = False
+        self.atk_mode: bool = ATK_MODE
 
     def execute(self):
-        if MANA_ME > 200:
-            self.atk_mode = True
-        elif MANA_ME < 50:
-            self.atk_mode = False
 
+        debug(f'atk={self.atk_mode}')
         if self.atk_mode == True:
             self.attack()
         else:
@@ -254,8 +262,10 @@ class AtkHero(Hero):
 
 
     def attack(self):
+        self._move(self.home)
         if self.loc.dist(self.home) > 500:
             self._move(self.home)
+            return
         for m in monsters:
             if m.shield_life>0:
                 continue
@@ -265,12 +275,12 @@ class AtkHero(Hero):
                         self._shield(m.id)
                         return
             elif m.dist(OPP_BASE) < MONSTER_VISION+WIND_RANGE:
-                if m.dist(self) < WIND_RANGE:
+                if m.dist(self.loc) < WIND_RANGE:
                     self.offensive_wind(m)
                     return
         else:
             for o in opps:
-                if o.shield_life==0 and self.dist(o)<CONTROL_RANGE:
+                if o.shield_life==0 and self.dist(o.loc)<CONTROL_RANGE:
                     self._control(o.id, BASE)
                     return
 
@@ -288,10 +298,76 @@ class MidHero(Hero):
         super().__init__(*args, **kwargs)
         self.home = HERO2_HOME
 
+    def execute(self):
+        self.defend()
+        print(self.command)
+    
+    def defend(self):
+        on: List[OppHero] = self.opp_neighbors()
+        if self.shield_life==0 and MANA_ME > 40 and on:
+            self._shield(self.id)
+            return
+
+        if self.shield_life>0 and MANA_ME > 40 and on:
+            if on[0].shield_life == 0 and on[0].loc.dist(self.loc) < WIND_RANGE:
+                t = on[0]
+                v: Vector = t.loc.vector_to(JAIL)
+                self.defensive_wind(t)
+                return
+
+
+        if not monsters:
+            self._move(self.home)
+            return
+
+        monsters.sort(key=lambda m:m.dist(BASE))
+        t: Entity = monsters[0]
+        if t.dist(BASE) > BASE_VISION+HERO_VISION:
+            self._move(self.home)
+            return
+
+        if t.etype == EntityType.MONSTER:
+            if t.dist(BASE) < (MONSTER_VISION-WIND_MOVE) and self.loc.dist(t.loc) < WIND_RANGE and t.shield_life==0 and MANA_ME>10:
+                self.defensive_wind(t)
+            # elif MANA_ME > 100 and self.loc.dist(t.loc) < WIND_RANGE and t.shield_life==0:
+            #     self.offensive_wind(t)
+            else:
+                self.attack_monster(t)
+
+
 class DefHero(Hero):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.home = HERO1_HOME
+
+    def execute(self):
+        self.defend()
+        print(self.command)
+    
+    def defend(self):
+        on: List[OppHero] = self.opp_neighbors()
+        if self.shield_life==0 and MANA_ME > 40 and on:
+            self._shield(self.id)
+            return
+
+        if not monsters:
+            self._move(self.home)
+            return
+
+        monsters.sort(key=lambda m:m.dist(BASE))
+        t: Entity = monsters[0]
+        if t.dist(BASE) > BASE_VISION+HERO_VISION:
+            self._move(self.home)
+            return
+
+        if t.etype == EntityType.MONSTER:
+            if t.dist(BASE) < (MONSTER_VISION-WIND_MOVE) and self.loc.dist(t.loc) < WIND_RANGE and t.shield_life==0 and MANA_ME>10:
+                self.defensive_wind(t)
+            # elif MANA_ME > 100 and self.loc.dist(t.loc) < WIND_RANGE and t.shield_life==0:
+            #     self.offensive_wind(t)
+            else:
+                self.attack_monster(t)
+
 
 class OppHero(Hero):
     pass
@@ -336,28 +412,37 @@ _scale = (BASE_VISION) * MIRROR
 
 HERO1_HOME = BASE.add_vector(_v1.scale(_scale*0.75))
 HERO2_HOME = BASE.add_vector(_v2.scale(_scale*1.5))
-HERO3_HOME = OPP_BASE.add_vector(_v1.scale(_scale*-1.5))
+HERO3_HOME = OPP_BASE.add_vector(_v1.scale(_scale*-0.75))
 JAIL = BASE.add_vector(_v4)
 
 
 HERO_HOMES = [HERO1_HOME, HERO2_HOME, HERO3_HOME]
+ATK_MODE = False
 
 
+ENTITIES = EntityTracker()
 
 # game loop
 while True:
     HEALTH_ME, MANA_ME = [int(j) for j in input().split()]
     HEALTH_OPP, MANA_OPP = [int(j) for j in input().split()]
 
-    entity_count = int(input())  # Amount of heros and monsters you can see
-    entities: List[Entity] = [entityFactory(input()) for _ in range(entity_count)]
-    heroes: List[Hero] = [Hero(*e) for e in entities if e.etype == EntityType.MY_HERO]
+    if MANA_ME > 200:
+        ATK_MODE = True
+    elif MANA_ME < 50:
+        ATK_MODE = False
 
-    opps: List[OppHero] = [OppHero(*e) for e in entities if e.etype == EntityType.OPP_HERO]
-    monsters: List[Monster] = [Monster(*e) for e in entities if e.etype == EntityType.MONSTER]
+    entity_count = int(input())  # Amount of heros and monsters you can see
+    ENTITIES.update(entity_count)
+
+    opps: List[OppHero] = list(ENTITIES.opps.values())
+    monsters: List[Monster] = list(ENTITIES.monsters.values())
+    heroes: List[Hero] = list(ENTITIES.heroes.values())
+
+
 
     heroes.sort(key=lambda e:e.dist(BASE))
-    h1, h2, h3 = DefHero(*heroes[0]), MidHero(*heroes[1]), AtkHero(*heroes[2])
+    h1, h2, h3 = DefHero(heroes[0]), MidHero(heroes[1]), AtkHero(heroes[2])
     heroes = [h1,h2,h3]
 
     heroes.sort(key=lambda e:e.id)
