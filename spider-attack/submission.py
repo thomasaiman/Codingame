@@ -169,10 +169,10 @@ class Entity:
         raise NotImplementedError()
 
     def dist(self, other: Union[Point,'Entity']):
-        if type(other) is Entity:
-            p: Point = other.loc
-        elif type(other) is Point:
+        if type(other) is Point:
             p: Point = other
+        elif hasattr(other, 'loc'):
+            p: Point = other.loc # type: ignore
         else:
             raise ValueError()
         return self.loc.dist(p)
@@ -264,15 +264,23 @@ class AtkHero(Hero):
         self.atk_mode: bool = ATK_MODE
 
     def execute(self):
-
         debug(f'atk={self.atk_mode}')
-        if self.atk_mode == True:
+        if self.instakill():
+            debug("gib")
+        elif self.atk_mode == True:
             self.attack()
         else:
             self.gather()
 
         print(self.command)
 
+    def instakill(self) -> bool:
+        for m in ENTITIES.monsters.values():
+            if (m.dist(OPP_BASE) < WIND_MOVE+400) and (self.dist(m) < WIND_RANGE):
+                self.offensive_wind(m)
+                return True
+        else:
+            return False
 
     def attack(self):
         self._move(self.home)
@@ -440,7 +448,7 @@ while True:
     HEALTH_ME, MANA_ME = [int(j) for j in input().split()]
     HEALTH_OPP, MANA_OPP = [int(j) for j in input().split()]
 
-    if MANA_ME > 80:
+    if MANA_ME > 150:
         ATK_MODE = True
     elif MANA_ME < 50:
         ATK_MODE = False
