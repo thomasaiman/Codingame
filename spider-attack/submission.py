@@ -141,6 +141,12 @@ class EntityTracker:
 
     def update(self, n: int):
         [m.advance() for m in self.monsters.values()]
+        for m_id in list(self.monsters.keys()):
+            m:Monster = self.monsters[m_id]
+            c:Monster = m.counterpart()
+            if not (c.id in self.monsters):
+                self.monsters[c.id] = c
+
         for e in self.all_entities():
             e.is_winded = False
         self.prune_monsters()
@@ -211,6 +217,20 @@ class Monster(Entity):
         super().__init__(*args, **kwargs)
         self.atk_neighbors = []
         self.wind_neighbors = []
+
+    def counterpart(self) -> 'Monster':
+        counter_eb: EntityBase = EntityBase(
+            id = (self.id-1 if self.id%2 else self.id+1),
+            etype = self.etype,
+            loc = Point(MAP_X-self.loc.x, MAP_Y-self.loc.y),
+            shield_life = 0,
+            is_controlled = False,
+            health = self.health,
+            vel = self.vel.scale(-1),
+            near_base = False,
+            threat_for = ThreatFor.NEITHER
+        )
+        return Monster(counter_eb)
 
     def find_atk_neighbors(self, monsters: List['Monster']):
         pass
