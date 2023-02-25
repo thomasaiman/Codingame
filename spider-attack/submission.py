@@ -219,6 +219,7 @@ class Monster(Entity):
         super().__init__(*args, **kwargs)
         self.atk_neighbors = []
         self.wind_neighbors = []
+        self.targeted_by: List[int] = []
 
     def counterpart(self) -> 'Monster':
         counter_eb: EntityBase = EntityBase(
@@ -259,7 +260,22 @@ class Monster(Entity):
             return False
 
     def is_handled(self) -> bool:
-        raise NotImplementedError()
+        # raise NotImplementedError()
+        if any(o for o in opps if o.dist(BASE)< BASE_VISION):
+            return False
+        if any(o for o in opps if o.dist(self)< SHIELD_RANGE):
+            return False
+
+        time = math.ceil((self.dist(BASE)-300)/MONSTER_SPEED)
+        if time > math.ceil(self.health/ATTACK_DAMAGE) and self.targeted_by:
+            return True
+        
+        return False
+
+
+
+
+
 class Hero(Entity):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -425,6 +441,7 @@ class AtkHero(Hero):
                 self.direct_monster(m)
                 return
     
+        opps.sort(key=lambda m:m.dist(OPP_BASE))
         for o in opps:
             if self.can_control(o):
                 self._control(o.id, BASE)
@@ -460,7 +477,7 @@ class MidHero(Hero):
             return
 
         if self.shield_life>0 and MANA_ME > 40 and on:
-            if on[0].shield_life == 0 and on[0].loc.dist(self.loc) < WIND_RANGE:
+            if self.can_wind(on[0]):
                 t = on[0]
                 debug(f"opploc={on[0].loc} dist={on[0].loc.dist(self.loc)}")
                 v: Vector = t.loc.vector_to(JAIL)
@@ -517,16 +534,13 @@ class DefHero(Hero):
             return
 
         if t.dist(BASE) < (MONSTER_VISION-WIND_MOVE) \
-            and self.loc.dist(t.loc) < WIND_RANGE \
-            and t.shield_life==0 \
-            and MANA_ME>10 \
+            and self.can_wind(t) \
             and t.is_winded == False:
                 self.defensive_wind(t)
-            # elif MANA_ME > 100 and self.loc.dist(t.loc) < WIND_RANGE and t.shield_life==0:
-            #     self.offensive_wind(t)
         else:
             self.attack_monster(t)
 
+        t.targeted_by.append(self.id)
 
 class OppHero(Hero):
     pass
