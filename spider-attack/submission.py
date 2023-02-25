@@ -366,7 +366,14 @@ class Hero(Entity):
         debug(f"{result} attacks monsters {[m.id for m in candidates[result]]}")
         return result
 
-        
+    def direct_monster(self, m:Monster):
+        d1: Numeric = m.dist(MONSTER_DEST1)
+        d2: Numeric = m.dist(MONSTER_DEST2)
+        if d1 < d2:
+            self._control(m.id, MONSTER_DEST1)
+        else:
+            self._control(m.id, MONSTER_DEST2)
+
 
 
 class AtkHero(Hero):
@@ -401,8 +408,7 @@ class AtkHero(Hero):
 
     def attack(self):
         self._move(self.home)
-        if self.loc.dist(self.home) > 500:
-            self._move(self.home)
+        if self.dist(OPP_BASE) > BASE_VISION+HERO_VISION:
             return
         for m in monsters:
             if self.can_wind(m):
@@ -416,7 +422,8 @@ class AtkHero(Hero):
                         return
         for m in monsters:
             if (not m.threat_for == ThreatFor.OPP_BASE) and self.can_control(m):
-                self._control(m.id, OPP_BASE)
+                self.direct_monster(m)
+                return
     
         for o in opps:
             if self.can_control(o):
@@ -569,6 +576,8 @@ HERO3_HOME_A = OPP_BASE.add_vector(_v2.scale(_scale*-0.75))
 HERO3_HOME_B = OPP_BASE.add_vector(_v3.scale(_scale*-0.75))
 JAIL = BASE.add_vector(_v4)
 
+MONSTER_DEST1 = OPP_BASE.add_vector(Vector(MONSTER_VISION-10, 10).scale(MIRROR))
+MONSTER_DEST2 = OPP_BASE.add_vector(Vector(10, MONSTER_VISION-10).scale(MIRROR))
 
 HERO_HOMES = [HERO1_HOME, HERO2_HOME, HERO3_HOME]
 ATK_MODE = False
