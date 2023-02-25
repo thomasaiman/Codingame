@@ -141,12 +141,7 @@ class EntityTracker:
 
     def update(self, n: int):
         [m.advance() for m in self.monsters.values()]
-        for m_id in list(self.monsters.keys()):
-            m:Monster = self.monsters[m_id]
-            c:Monster = m.counterpart()
-            if not (c.id in self.monsters):
-                self.monsters[c.id] = c
-
+        # self.add_counterparts()
         for e in self.all_entities():
             e.is_winded = False
         self.prune_monsters()
@@ -167,6 +162,13 @@ class EntityTracker:
         
         debug(str(list(self.monsters.keys())))
         return
+
+    def add_counterparts(self):
+        for m_id in list(self.monsters.keys()):
+            m:Monster = self.monsters[m_id]
+            c:Monster = m.counterpart()
+            if not (c.id in self.monsters):
+                self.monsters[c.id] = c
 
     def prune_monsters(self):
         to_remove: List[int] = []
@@ -285,6 +287,21 @@ class Hero(Entity):
     def set_target(self, e: Entity):
         self.target = e
 
+    def can_wind(self, e: Entity) -> bool:
+        if MANA_ME > 10 and self.dist(e) < WIND_RANGE and e.shield_life==0:
+            return True
+        else:
+            return False
+
+    def can_control(self, e: Entity) -> bool:
+        if MANA_ME > 10 and self.dist(e) < CONTROL_RANGE and e.shield_life==0:
+            return True
+        else:
+            return False
+
+    def can_shield(self, e: Entity) -> bool:
+        return self.can_control(e)
+
     def defensive_wind(self, t: Entity):
         v: Vector = BASE.vector_to(t.loc)
         self._wind(self.loc.add_vector(v))
@@ -296,26 +313,32 @@ class Hero(Entity):
         self._wind(self.loc.add_vector(v))
         debug(f"wind {t.id}")
 
-    def attack_monster(self, t: Entity):
+    def attack_monster(self, t: Monster):
         v: Vector = t.loc.vector_to(self.loc)
         if v.norm() > MELEE_RANGE+HERO_SPEED:
             p:Point = t.loc.add_vector(t.vel)
         else:
-            centroid: Point = self.home
-            #find successful attack spot closest to centroid
-            v2: Vector = t.loc.vector_to(centroid)
-            v2: Vector = v2.normalize().scale(MELEE_RANGE*0.99)
-            debug(f"{self.id} atk {t.id} v2 = {v2} {v2.norm()}")
-            p:Point = t.loc.add_vector(v2)
+            p2:Optional[Point] = self.optimal_attack(t)
+            if p2:
+                p:Point = p2
+            else:
+                centroid: Point = self.home
+                #find successful attack spot closest to centroid
+                v2: Vector = t.loc.vector_to(centroid)
+                v2: Vector = v2.normalize().scale(MELEE_RANGE*0.99)
+                debug(f"{self.id} atk {t.id} v2 = {v2} {v2.norm()}")
+                p:Point = t.loc.add_vector(v2)
 
         self._move(p)
 
     def opp_neighbors(self) -> List['OppHero']:
         return [o for o in opps if o.dist(self.loc)<CONTROL_RANGE]
 
-    def optimal_attack(self) -> Optional[Point]:
+    def optimal_attack(self, t:Optional[Monster] = None) -> Optional[Point]:
         SEARCH_RANGE = HERO_SPEED + MELEE_RANGE - 10 # for rounding errors
         neighbors: List[Monster] = [m for m in ENTITIES.monsters.values() if m.dist(self) < SEARCH_RANGE]
+        if t:
+            neighbors = [m for m in neighbors if m.dist(t) < SEARCH_RANGE]
         if not neighbors:
             return None
         debug(f" hero {self.id} sees monsters {[m.id for m in neighbors]}")
@@ -349,8 +372,13 @@ class Hero(Entity):
 class AtkHero(Hero):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.home = HERO3_HOME
         self.atk_mode: bool = ATK_MODE
+        if 0 <= TURN_COUNT%18 < 6:
+            self.home = HERO3_HOME_A
+        elif 6 <= TURN_COUNT%18 < 12:
+            self.home = HERO3_HOME_B
+        else:
+            self.home = HERO3_HOME
 
     def execute(self):
         debug(f'atk={self.atk_mode}')
@@ -377,22 +405,23 @@ class AtkHero(Hero):
             self._move(self.home)
             return
         for m in monsters:
-            if m.shield_life>0:
-                continue
+            if self.can_wind(m):
+                self.offensive_wind(m)
+                return
+        for m in monsters:    
             if m.threat_for == ThreatFor.OPP_BASE:
                 if m.dist(OPP_BASE) < 12*MONSTER_SPEED+300:
-                    if self.dist(m.loc) < SHIELD_RANGE:
+                    if self.can_shield(m):
                         self._shield(m.id)
                         return
-            elif m.dist(OPP_BASE) < MONSTER_VISION+WIND_RANGE:
-                if m.dist(self.loc) < WIND_RANGE:
-                    self.offensive_wind(m)
-                    return
-        else:
-            for o in opps:
-                if o.shield_life==0 and self.dist(o.loc)<CONTROL_RANGE:
-                    self._control(o.id, BASE)
-                    return
+        for m in monsters:
+            if (not m.threat_for == ThreatFor.OPP_BASE) and self.can_control(m):
+                self._control(m.id, OPP_BASE)
+    
+        for o in opps:
+            if self.can_control(o):
+                self._control(o.id, BASE)
+                return
 
 
     def gather(self):
@@ -535,7 +564,9 @@ _scale = (BASE_VISION) * MIRROR
 
 HERO1_HOME = BASE.add_vector(_v1.scale(_scale*0.75))
 HERO2_HOME = BASE.add_vector(_v2.scale(_scale*1.5))
-HERO3_HOME = OPP_BASE.add_vector(_v1.scale(_scale*-0.75))
+HERO3_HOME = OPP_BASE.add_vector(_v1.scale(_scale*-1.25))
+HERO3_HOME_A = OPP_BASE.add_vector(_v2.scale(_scale*-0.75))
+HERO3_HOME_B = OPP_BASE.add_vector(_v3.scale(_scale*-0.75))
 JAIL = BASE.add_vector(_v4)
 
 
@@ -545,8 +576,10 @@ ATK_MODE = False
 
 ENTITIES = EntityTracker()
 
+TURN_COUNT = 0
 # game loop
 while True:
+    TURN_COUNT += 1
     HEALTH_ME, MANA_ME = [int(j) for j in input().split()]
     HEALTH_OPP, MANA_OPP = [int(j) for j in input().split()]
 
