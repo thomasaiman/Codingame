@@ -297,9 +297,12 @@ class Hero(Entity):
     def _control(self, id:int, point:Point):
         self.command = f"{CommandType.CONTROL.value} {id} {int(point.x)} {int(point.y)}"
 
-    def execute(self):
+    def analyze(self):
         raise NotImplementedError()
 
+    def execute(self):
+        print(self.command)
+    
     def set_target(self, e: Entity):
         self.target = e
 
@@ -403,7 +406,7 @@ class AtkHero(Hero):
         else:
             self.home = HERO3_HOME
 
-    def execute(self):
+    def analyze(self):
         debug(f'atk={self.atk_mode}')
         if self.instakill():
             debug("gib")
@@ -411,8 +414,6 @@ class AtkHero(Hero):
             self.attack()
         else:
             self.gather()
-
-        print(self.command)
 
     def instakill(self) -> bool:
         for m in ENTITIES.monsters.values():
@@ -450,25 +451,27 @@ class AtkHero(Hero):
 
     def gather(self):
         p: Optional[Point] = self.optimal_attack()
-        if p and p.dist(BASE)>BASE_VISION:
+        if p and p.dist(OPP_BASE)<(MAP_X*2/3):
             self._move(p)
-        elif monsters:
+            return
+
+        if monsters:
             target: Monster = min(monsters, key=lambda m: m.loc.dist(HERO3_HOME))
-            self.attack_monster(target)
-        else:
-            self._move(self.home)
+            if target.dist(OPP_BASE) < MAP_X/2:
+                self.attack_monster(target)
+                return
         
-
-
+        self._move(self.home)
+        return
+        
 
 class MidHero(Hero):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.home = HERO2_HOME
 
-    def execute(self):
+    def analyze(self):
         self.defend()
-        print(self.command)
     
     def defend(self):
         on: List[OppHero] = self.opp_neighbors()
@@ -513,9 +516,8 @@ class DefHero(Hero):
         super().__init__(*args, **kwargs)
         self.home = HERO1_HOME
 
-    def execute(self):
+    def analyze(self):
         self.defend()
-        print(self.command)
     
     def defend(self):
         on: List[OppHero] = self.opp_neighbors()
@@ -590,8 +592,8 @@ HERO3_HOME_A = OPP_BASE.add_vector(_v2.scale(_scale*-0.75))
 HERO3_HOME_B = OPP_BASE.add_vector(_v3.scale(_scale*-0.75))
 JAIL = BASE.add_vector(_v4)
 
-MONSTER_DEST1 = OPP_BASE.add_vector(Vector(MONSTER_VISION-10, 10).scale(MIRROR))
-MONSTER_DEST2 = OPP_BASE.add_vector(Vector(10, MONSTER_VISION-10).scale(MIRROR))
+MONSTER_DEST1 = OPP_BASE.add_vector(Vector(MONSTER_VISION-10, MONSTER_SPEED).scale(MIRROR*-1))
+MONSTER_DEST2 = OPP_BASE.add_vector(Vector(MONSTER_SPEED, MONSTER_VISION-10).scale(MIRROR*-1))
 
 HERO_HOMES = [HERO1_HOME, HERO2_HOME, HERO3_HOME]
 ATK_MODE = False
@@ -623,7 +625,8 @@ while True:
     heroes.sort(key=lambda e:e.dist(BASE))
     h1, h2, h3 = DefHero(heroes[0]), MidHero(heroes[1]), AtkHero(heroes[2])
     heroes = [h1,h2,h3]
-
+    for h in heroes:
+        h.analyze()
     heroes.sort(key=lambda e:e.id)
     for h in heroes:
         h.execute()
