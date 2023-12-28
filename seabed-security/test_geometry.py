@@ -113,6 +113,48 @@ class CircleTangentTestCase(unittest.TestCase):
         self.assertTrue(dist(p2, Point(1,1)) < 1e-9)
 
 
+class AvoidanceAnglesTestCase(unittest.TestCase):
+    def testAvoidanceAnglesStationary(self):
+        x : Sweep = collision_avoidance_angles(
+            p_avoider=Point(2,0),
+            s_avoider=600,
+            p_chaser=Point(0,0),
+            v_chaser=Vector(0,0),
+            radius=norm(Vector(1,1)),
+        )
+        expected = Sweep(math.pi*3/4, math.pi/2)
+        print(x, expected)
+        self.assertEqual(x, expected)
+
+
+    def testAvoidanceAnglesNearChase(self):
+        x : Sweep = collision_avoidance_angles(
+            p_avoider=Point(1+1e-12,0),
+            s_avoider=1,
+            p_chaser=Point(0,0),
+            v_chaser=Vector(1,0),
+            radius=1,
+        )
+        self.assertAlmostEqual(x.start, 0, places=4)
+        self.assertAlmostEqual(x.d_angle, 2*math.pi, places=4)
+        self.assertFalse(x.contains_angle(0))
+
+    def testAvoidanceAnglesNearChaseRotated(self):
+        x : Sweep = collision_avoidance_angles(
+            p_avoider=Point(0,1+1e-12),
+            s_avoider=1,
+            p_chaser=Point(0,0),
+            v_chaser=Vector(0,1),
+            radius=1,
+        )
+        self.assertAlmostEqual(x.start, math.pi/2, places=4)
+        self.assertAlmostEqual(x.d_angle, 2*math.pi, places=4)
+        self.assertFalse(x.contains_angle(math.pi/2))
+
+    def testAvoidanceAnglesOther(self):
+        pass # TODO: try some test cases from in game that fail
+
+
 class CollisionTestCase(unittest.TestCase):
 
     """ Copied from Codingame referee and translated to Python
@@ -199,9 +241,53 @@ class CollisionTestCase(unittest.TestCase):
             r2=0
         ))
 
-    def testAvoidanceAngles(self):
-        pass # TODO
+class CollisionAvoidanceTestCase(unittest.TestCase):
 
+    class TestData(NamedTuple):
+        p_avoider: Point
+        s_avoider: Numeric
+        p_chaser: Point
+        v_chaser: Vector
+        radius: Numeric
+
+
+    def avoid(self, testData: TestData):
+        td = testData._replace(radius = testData.radius+1e-2)
+
+        s: Sweep = collision_avoidance_angles(**td._asdict())
+        v_avoider1 = vec_from_angle(s.start) * testData.s_avoider
+        v_avoider2 = vec_from_angle(s.start+s.d_angle) * testData.s_avoider
+
+        for v_avoider in (v_avoider1, v_avoider2):
+            self.assertFalse(CollisionTestCase.collision(
+                p1 = td.p_chaser,
+                v1 = td.v_chaser,
+                r1 = testData.radius,
+                p2 = td.p_avoider,
+                v2 = v_avoider,
+                r2 = 0
+            ))
+
+    def testAvoidance1(self):
+        td = self.TestData(
+            p_avoider = Point(2,0),
+            s_avoider = 600,
+            p_chaser = Point(0,0),
+            v_chaser = Vector(0,0),
+            radius = norm(Vector(1,1)),
+        )
+        self.avoid(td)
+
+
+    def testAvoidance2(self):
+        td = self.TestData(
+            p_avoider = Point(501,0),
+            s_avoider = 600,
+            p_chaser = Point(0,0),
+            v_chaser = Vector(540,0),
+            radius = 500,
+        )
+        self.avoid(td)
 
 # class
 if __name__ == '__main__':
