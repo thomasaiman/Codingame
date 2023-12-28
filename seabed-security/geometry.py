@@ -55,7 +55,7 @@ class Sweep:
         right, left = self.start, (self.start+self.d_angle)%(2*math.pi)
         if self.d_angle < 0:
             right, left = left, right
-        debug("sweep", "right", right, "left", left)
+        # debug("sweep", "right", right, "left", left)
         if right < left: # doesn't cross 0/2pi line
             return (right <= phi <= left)
         else: # crosses 0/2pi line

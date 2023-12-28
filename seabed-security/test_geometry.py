@@ -103,7 +103,15 @@ class DistanceTestCase(unittest.TestCase):
 
 
 class CircleTangentTestCase(unittest.TestCase):
-    pass
+    def testTangent(self):
+        c = Circle(Point(0,0), norm(Vector(1,1))) # intersects Point(1,1) with slope -1
+        # tangent line at Point(1,1) should intersect Point(2,0)
+        p0 = Point(2,0)
+        p1, p2 = circle_tangents_from_point(c, p0)
+        p1, p2 = sorted((p1,p2))
+        self.assertTrue(dist(p1, Point(1,-1)) < 1e-9) # funky to handle floating point errors
+        self.assertTrue(dist(p2, Point(1,1)) < 1e-9)
+
 
 class CollisionTestCase(unittest.TestCase):
 
@@ -142,15 +150,13 @@ class CollisionTestCase(unittest.TestCase):
         c = x2 * x2 + y2 * y2 - r * r
         delta = b * b - 4.0 * a * c
 
-        print("delta=",delta)
         if (delta < 0.0):
             print("delta<0"); return False
 
         t = (-b - math.sqrt(delta)) / (2.0 * a)
-        print("t=", t)
-
         t2 = (-b + math.sqrt(delta)) / (2.0 * a)
-        print("t2=", t2)
+        print("t=", t, "t2=", t2)
+
         if (0 < t <= 1):
             return True
         else:
