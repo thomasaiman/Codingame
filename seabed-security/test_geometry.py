@@ -106,8 +106,92 @@ class CircleTangentTestCase(unittest.TestCase):
     pass
 
 class CollisionTestCase(unittest.TestCase):
+
+    """ Copied from Codingame referee and translated to Python
+    https://github.com/CodinGame/FallChallenge2023-SeabedSecurity/blob/main/src/main/java/com/codingame/game/Game.java#L1067
+    """
+    @staticmethod
+    def collision(p1 : Point, v1: Vector, r1: Numeric, p2: Point, v2: Vector, r2: Numeric) -> bool:
+        # Check instant collision
+        if (dist(p1, p2) <= r1+r2):
+            print(0.0); return True
+
+        # Both units are motionless
+        if (norm(v1) == 0 and norm(v2) == 0):
+            print("Both motionless"); return False
+
+        # Change referencial
+        x, y = p1.x, p1.y
+        ux, uy = p2.x, p2.y
+        x2, y2 = x-ux, y-uy
+        r = r1 + r2
+        vx2, vy2 = v1.x - v2.x, v1.y - v2.y
+
+        # Resolving: sqrt((x + t*vx)^2 + (y + t*vy)^2) = radius <=> t^2*(vx^2 + vy^2) + t*2*(x*vx + y*vy) + x^2 + y^2 - radius^2 = 0
+        # at^2 + bt + c = 0;
+        # a = vx^2 + vy^2
+        # b = 2*(x*vx + y*vy)
+        # c = x^2 + y^2 - radius^2
+
+        a = vx2 * vx2 + vy2 * vy2;
+
+        if (a <= 0.0) :
+            print("a<=0"); return False
+
+        b = 2.0 * (x2 * vx2 + y2 * vy2)
+        c = x2 * x2 + y2 * y2 - r * r
+        delta = b * b - 4.0 * a * c
+
+        print("delta=",delta)
+        if (delta < 0.0):
+            print("delta<0"); return False
+
+        t = (-b - math.sqrt(delta)) / (2.0 * a)
+        print("t=", t)
+
+        t2 = (-b + math.sqrt(delta)) / (2.0 * a)
+        print("t2=", t2)
+        if (0 < t <= 1):
+            return True
+        else:
+            return False
+
     def testCollision(self):
-        pass # TODO: implement CG's swept-sphere collision logic
+        self.assertTrue(self.collision(
+            p1=Point(0,0),
+            v1=Vector(1,0),
+            r1 = 1,
+            p2=Point(1.1, 0),
+            v2=Vector(0, 0),
+            r2=0,
+        ))
+
+        self.assertFalse(self.collision(
+            p1=Point(0,0),
+            v1=Vector(1,0),
+            r1 = 1,
+            p2=Point(2.1, 0),
+            v2=Vector(0, 0),
+            r2=0
+        ))
+
+        self.assertTrue(self.collision(
+            p1=Point(0,0),
+            v1=Vector(1,0),
+            r1 = 1,
+            p2=Point(1.1, 0),
+            v2=Vector(0, 1),
+            r2=0
+        ))
+
+        self.assertTrue(self.collision(
+            p1=Point(0,0),
+            v1=Vector(1,0),
+            r1 = 1,
+            p2=Point(200, 0),
+            v2=Vector(-500,0),
+            r2=0
+        ))
 
     def testAvoidanceAngles(self):
         pass # TODO
