@@ -22,7 +22,7 @@ class Vector(NamedTuple):
     def __mul__(self, scale: Numeric) -> "Vector":
         return Vector(self.x*scale, self.y*scale)
 
-    def __div__(self, scale: Numeric) -> "Vector":
+    def __truediv__(self, scale: Numeric) -> "Vector":
         return Vector(self.x/scale, self.y/scale)
 
 # class Point(Vector):
@@ -37,28 +37,29 @@ class Circle(NamedTuple):
     center: Point
     radius: Numeric
 
-class Sweep(NamedTuple):
-    start: Numeric 
-    d_angle: Numeric
+from dataclasses import dataclass
+@dataclass
+class Sweep:
+    start: Numeric # radians 0 to 2pi
+    d_angle: Numeric # radians ... ? 0 to 2pi? or uncapped?
 
-    @staticmethod
-    def _normalize_angle(phi: Numeric) -> Numeric:
-        if phi > math.pi:
-            return phi - 2*math.pi
-        elif phi < -math.pi:
-            return phi + 2*math.pi
-        else:
-            return phi
+    def __init__(self, start: Numeric, d_angle: Numeric):
+        self.start = start%(2*math.pi)
+        self.d_angle = d_angle
 
     def contains_angle(self, phi: Numeric) -> bool:
-        phi = Sweep._normalize_angle(phi)
-        start = Sweep._normalize_angle(self.start)
-        right, left = sorted((start, start+self.d_angle))
-        debug("sweep", "right", right, "left", left)
-        if right <= phi <= left:
+        if self.d_angle > (2*math.pi):
             return True
-        else:
-            return False
+
+        phi %= math.pi*2
+        right, left = self.start, (self.start+self.d_angle)%(2*math.pi)
+        if self.d_angle < 0:
+            right, left = left, right
+        debug("sweep", "right", right, "left", left)
+        if right < left: # doesn't cross 0/2pi line
+            return (right <= phi <= left)
+        else: # crosses 0/2pi line
+            return not (left < phi < right)
 
 def norm(v: Vector) -> float:
     return math.hypot(*v)
@@ -71,18 +72,18 @@ def dot(v1: Vector, v2: Vector) -> Numeric:
     return v1.x*v2.x + v1.y*v2.y
 
 def angle(v1: Vector) -> float:
-    return math.atan2(v1.y, v1.x) # radians between +pi and -pi
+    return math.atan2(v1.y, v1.x) # radians between -pi and +pi
 
-def relative_angle(v1 : Vector, v2: Vector) -> float:
+def relative_angle(v1 : Vector, v2: Vector) -> float: # radians between -pi and +pi
     # from v1 to v2
     diff = angle(v2) - angle(v1)
     if diff > math.pi:
         return -1 * (2*math.pi - diff) # -2*math.pi + diff = diff - 2*math.pi
-    elif diff < -math.pi:
+    elif diff <= -math.pi:
         return (2*math.pi + diff)
     else:
         return diff
-    
+
 def vec_from_angle(angle: Numeric) -> Vector:
     return Vector(math.cos(angle), math.sin(angle))
 
@@ -90,6 +91,9 @@ def dist(p1: Point, p2: Point) -> Numeric:
     return norm(p1-p2)
 
 def point_to_line_distance(point: Point, line: LineSegment) -> Numeric:
+    denominator: Numeric = dist(line.p1, line.p2)
+    if denominator < 1e-8:
+        return dist(line.p1, point)
     # https://en.wikipedia.org/wiki/Distance_from_a_point_to_a_line
     x0, y0 = point.x, point.y
     x1, y1 = line.p1.x, line.p1.y
@@ -139,51 +143,53 @@ def collision_avoidance_angles(p_avoider: Point, s_avoider: Numeric, p_chaser: P
     debug(math.degrees(avoider_angle_t1), math.degrees(avoider_angle_t2))
     return Sweep(start=avoider_angle_t1, d_angle=2*(math.pi-angle_C))
 
-x1 = circle_tangents_from_point(
-    Circle(Point(501,0), 500),
-    Point(0,0)
-)
-print([math.degrees(angle(v)) for v in x1])
-print('*'*50)
-x = collision_avoidance_angles(
-    Point(0,0),
-    600,
-    Point(501,0),
-    Vector(-540, 0),
-    500
-)
-print([math.degrees(x.start), math.degrees(x.start+x.d_angle)])
-print(x.contains_angle(0))
-print(x.contains_angle(math.pi))
 
-print('-'*50)
-x = collision_avoidance_angles(
-    Point(7272,7708),
-    600,
-    Point(6477,7843),
-    Vector(271, 467),
-    500
-)
-print([math.degrees(_) for _ in x])
-print(x.contains_angle(math.readi0))
-print(x.contains_angle(math.pi))
-# print('-'*50)
-# x = collision_avoidance_angles(
-#     Point(500,0),
-#     600,
-#     Point(-1,0),
-#     Vector(540, 0),
-#     500
-# )
-# print([math.degrees(_) for _ in x])
-# print('-'*50)
-# x = collision_avoidance_angles(
-#     Point(0 + 456,0 + 123),
-#     600,
-#     Point(501/math.sqrt(2) + 456 ,501/math.sqrt(2) + 123),
-#     Vector(-540/math.sqrt(2), -540/math.sqrt(2)),
-#     500
-# )
-# print([math.degrees(_) for _ in x])
+if __name__=="__main__":
+    x1 = circle_tangents_from_point(
+        Circle(Point(501,0), 500),
+        Point(0,0)
+    )
+    print([math.degrees(angle(v)) for v in x1])
+    print('*'*50)
+    x = collision_avoidance_angles(
+        Point(0,0),
+        600,
+        Point(501,0),
+        Vector(-540, 0),
+        500
+    )
+    print([math.degrees(x.start), math.degrees(x.start+x.d_angle)])
+    print(x.contains_angle(0))
+    print(x.contains_angle(math.pi))
 
-## seed=-4698798113703483000
+    print('-'*50)
+    x = collision_avoidance_angles(
+        Point(7272,7708),
+        600,
+        Point(6477,7843),
+        Vector(271, 467),
+        500
+    )
+    print([math.degrees(_) for _ in x])
+    print(x.contains_angle(math.radians(45)))
+    print(x.contains_angle(math.pi))
+    # print('-'*50)
+    # x = collision_avoidance_angles(
+    #     Point(500,0),
+    #     600,
+    #     Point(-1,0),
+    #     Vector(540, 0),
+    #     500
+    # )
+    # print([math.degrees(_) for _ in x])
+    # print('-'*50)
+    # x = collision_avoidance_angles(
+    #     Point(0 + 456,0 + 123),
+    #     600,
+    #     Point(501/math.sqrt(2) + 456 ,501/math.sqrt(2) + 123),
+    #     Vector(-540/math.sqrt(2), -540/math.sqrt(2)),
+    #     500
+    # )
+    # print([math.degrees(_) for _ in x])
+
+    ## seed=-4698798113703483000
