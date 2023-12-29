@@ -2,6 +2,7 @@ from typing import List, NamedTuple, Dict, Union, Tuple, Optional, Any
 import sys
 import math
 from itertools import chain
+from dataclasses import dataclass
 
 Numeric = Union[int, float]
 
@@ -25,8 +26,6 @@ class Vector(NamedTuple):
     def __truediv__(self, scale: Numeric) -> "Vector":
         return Vector(self.x/scale, self.y/scale)
 
-# class Point(Vector):
-#     pass
 Point = Vector
 
 class LineSegment(NamedTuple):
@@ -37,7 +36,6 @@ class Circle(NamedTuple):
     center: Point
     radius: Numeric
 
-from dataclasses import dataclass
 @dataclass
 class Sweep:
     start: Numeric # radians 0 to 2pi

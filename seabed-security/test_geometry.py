@@ -278,7 +278,6 @@ class CollisionAvoidanceTestCase(unittest.TestCase):
         )
         self.avoid(td)
 
-
     def testAvoidance2(self):
         td = self.TestData(
             p_avoider = Point(501,0),
@@ -289,6 +288,5 @@ class CollisionAvoidanceTestCase(unittest.TestCase):
         )
         self.avoid(td)
 
-# class
 if __name__ == '__main__':
     unittest.main()
